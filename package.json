@@ -1,0 +1,17 @@
+{
+  "name": "laika-signal",
+  "version": "0.1.0",
+  "description": "라이카시네마 아레시보 메시지 프로젝트 - 카카오톡 감상 신호 챗봇",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pngjs": "^7.0.0"
+  }
+}

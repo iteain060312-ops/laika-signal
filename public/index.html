@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LAIKA SIGNAL · 카카오톡 시뮬레이터</title>
+<style>
+  :root { --bg:#b2c7d9; --me:#fee500; --ink:#191919; --sub:#556677; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; font-family:-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", sans-serif; color:var(--ink); }
+  body { background:#2a2f3a; display:flex; justify-content:center; }
+  .phone { width:100%; max-width:420px; height:100%; display:flex; flex-direction:column; background:var(--bg); }
+  header { display:flex; align-items:center; gap:10px; padding:12px 14px; background:var(--bg); border-bottom:1px solid rgba(0,0,0,.06); }
+  header .avatar { width:36px; height:36px; border-radius:14px; background:#0b0f1e; display:grid; place-items:center; color:#a8c4ff; font-size:18px; }
+  header .name { font-weight:700; font-size:16px; }
+  header .tag { font-size:11px; color:var(--sub); }
+  header button { margin-left:auto; border:0; background:rgba(255,255,255,.55); border-radius:12px; padding:6px 10px; font-size:12px; cursor:pointer; }
+  #log { flex:1; overflow-y:auto; padding:14px 12px 8px; display:flex; flex-direction:column; gap:8px; }
+  .row { display:flex; gap:8px; align-items:flex-start; }
+  .row.me { justify-content:flex-end; }
+  .row .pf { width:36px; height:36px; border-radius:14px; background:#0b0f1e; color:#a8c4ff; display:grid; place-items:center; flex:none; font-size:16px; }
+  .row.cont .pf { visibility:hidden; }
+  .stack { display:flex; flex-direction:column; gap:6px; max-width:78%; }
+  .bubble { background:#fff; padding:9px 12px; border-radius:4px 16px 16px 16px; font-size:14.5px; line-height:1.5; white-space:pre-wrap; word-break:keep-all; overflow-wrap:anywhere; }
+  .me .bubble { background:var(--me); border-radius:16px 4px 16px 16px; }
+  .img { border-radius:12px; overflow:hidden; background:#fff; }
+  .img img, .card img { display:block; width:100%; height:auto; }
+  .card { background:#fff; border-radius:12px; overflow:hidden; width:260px; max-width:100%; }
+  .card .body { padding:11px 13px 13px; }
+  .card .title { font-weight:700; font-size:14.5px; margin-bottom:4px; }
+  .card .desc { font-size:13.5px; color:#333; white-space:pre-wrap; line-height:1.5; word-break:keep-all; overflow-wrap:anywhere; }
+  .typing { color:var(--sub); font-size:13px; padding-left:44px; }
+  #quick { display:flex; gap:6px; overflow-x:auto; padding:6px 12px 8px; min-height:44px; }
+  #quick button { flex:none; border:1px solid rgba(0,0,0,.12); background:#fff; border-radius:16px; padding:7px 13px; font-size:13.5px; cursor:pointer; min-height:32px; }
+  #quick button:active { background:#f2f2f2; }
+  form { display:flex; gap:8px; padding:8px 10px calc(8px + env(safe-area-inset-bottom)); background:#fff; }
+  form textarea { flex:1; border:0; resize:none; font:inherit; font-size:16px; padding:8px 4px; max-height:120px; outline:none; }
+  form button { border:0; background:var(--me); border-radius:10px; padding:0 14px; font-weight:700; cursor:pointer; min-width:56px; }
+  form button:disabled { opacity:.5; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <header>
+    <div class="avatar" aria-hidden="true">✦</div>
+    <div>
+      <div class="name">라이카시네마</div>
+      <div class="tag">LAIKA SIGNAL · 시뮬레이터</div>
+    </div>
+    <button id="reset" type="button" title="새 관객으로 다시 시작">새 관객으로</button>
+  </header>
+  <div id="log" aria-live="polite"></div>
+  <div id="quick"></div>
+  <form id="f">
+    <textarea id="t" rows="1" placeholder="메시지 입력" aria-label="메시지 입력"></textarea>
+    <button id="sendBtn" type="submit">전송</button>
+  </form>
+</div>
+<script>
+const log = document.getElementById('log');
+const quick = document.getElementById('quick');
+const input = document.getElementById('t');
+const sendBtn = document.getElementById('sendBtn');
+
+function newUserId() { return 'sim-' + Math.random().toString(36).slice(2, 10); }
+let userId;
+try { userId = localStorage.getItem('laika-sim-user') || newUserId(); localStorage.setItem('laika-sim-user', userId); }
+catch { userId = newUserId(); }
+
+let lastWasBot = false;
+function row(me) {
+  const r = document.createElement('div');
+  r.className = 'row' + (me ? ' me' : '') + (!me && lastWasBot ? ' cont' : '');
+  if (!me) { const pf = document.createElement('div'); pf.className = 'pf'; pf.textContent = '✦'; r.appendChild(pf); }
+  const s = document.createElement('div'); s.className = 'stack'; r.appendChild(s);
+  log.appendChild(r);
+  lastWasBot = !me;
+  return s;
+}
+function scroll() { log.scrollTop = log.scrollHeight; }
+
+function addMe(text) {
+  const s = row(true);
+  const b = document.createElement('div'); b.className = 'bubble'; b.textContent = text; s.appendChild(b);
+  scroll();
+}
+
+function renderOutputs(outputs) {
+  const s = row(false);
+  for (const o of outputs) {
+    if (o.simpleText) {
+      const b = document.createElement('div'); b.className = 'bubble'; b.textContent = o.simpleText.text; s.appendChild(b);
+    } else if (o.simpleImage) {
+      const d = document.createElement('div'); d.className = 'img';
+      const img = new Image(); img.src = o.simpleImage.imageUrl; img.alt = o.simpleImage.altText || ''; img.onload = scroll;
+      d.appendChild(img); s.appendChild(d);
+    } else if (o.basicCard) {
+      const c = o.basicCard;
+      const d = document.createElement('div'); d.className = 'card';
+      if (c.thumbnail) { const img = new Image(); img.src = c.thumbnail.imageUrl; img.alt = c.thumbnail.altText || ''; img.onload = scroll; d.appendChild(img); }
+      const body = document.createElement('div'); body.className = 'body';
+      if (c.title) { const t = document.createElement('div'); t.className = 'title'; t.textContent = c.title; body.appendChild(t); }
+      if (c.description) { const t = document.createElement('div'); t.className = 'desc'; t.textContent = c.description; body.appendChild(t); }
+      d.appendChild(body); s.appendChild(d);
+    }
+  }
+  scroll();
+}
+
+function renderQuick(list) {
+  quick.innerHTML = '';
+  (list || []).forEach((q) => {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = q.label;
+    b.onclick = () => send(q.messageText || q.label);
+    quick.appendChild(b);
+  });
+}
+
+async function send(text, silent) {
+  text = text.trim(); if (!text) return;
+  if (!silent) addMe(text);
+  renderQuick([]);
+  sendBtn.disabled = true;
+  const typing = document.createElement('div'); typing.className = 'typing'; typing.textContent = '신호 수신 중…';
+  log.appendChild(typing); scroll();
+  try {
+    const res = await fetch('/skill', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userRequest: { utterance: text, user: { id: userId } }, action: { clientExtra: {} } }),
+    });
+    const data = await res.json();
+    typing.remove();
+    renderOutputs(data.template.outputs || []);
+    renderQuick(data.template.quickReplies);
+  } catch (e) {
+    typing.remove();
+    renderOutputs([{ simpleText: { text: '서버에 연결하지 못했어요.' } }]);
+  } finally { sendBtn.disabled = false; }
+}
+
+document.getElementById('f').addEventListener('submit', (e) => { e.preventDefault(); const v = input.value; input.value = ''; send(v); });
+input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); document.getElementById('f').requestSubmit(); } });
+document.getElementById('reset').onclick = () => {
+  userId = newUserId(); try { localStorage.setItem('laika-sim-user', userId); } catch {}
+  log.innerHTML = ''; lastWasBot = false; send('안녕하세요', true);
+};
+send('안녕하세요', true);
+</script>
+</body>
+</html>
