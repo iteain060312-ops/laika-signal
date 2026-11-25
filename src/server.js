@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { handle, pushFor, setCallbackSender } = require('./bot');
+const { handle, pushFor, setCallbackSender, adminSend, adminUsers } = require('./bot');
 const { render } = require('./glyph');
 const store = require('./store');
 
@@ -54,6 +54,22 @@ setCallbackSender(async (url, body) => {
 app.get('/api/push/:userId', (req, res) => {
   res.json(pushFor(String(req.params.userId).slice(0, 80), baseUrl(req)) || {});
 });
+
+// 운영자 패널 API (ADMIN_KEY 환경 변수로 보호)
+function adminOk(req, res) {
+  const key = process.env.ADMIN_KEY;
+  if (!key) { res.status(403).json({ error: 'Render 환경 변수에 ADMIN_KEY를 먼저 정해주세요' }); return false; }
+  if (req.get('x-admin-key') !== key) { res.status(401).json({ error: '운영자 비밀번호가 맞지 않아요' }); return false; }
+  return true;
+}
+app.get('/api/admin/users', (req, res) => { if (adminOk(req, res)) res.json(adminUsers()); });
+app.post('/api/admin/send', (req, res) => {
+  if (!adminOk(req, res)) return;
+  const { userId, relation, delaySec } = req.body || {};
+  if (!userId || !['similar', 'different', 'like'].includes(relation)) return res.status(400).json({ error: '잘못된 요청' });
+  res.json(adminSend(String(userId), relation, Number(delaySec) || 0));
+});
+app.get('/admin', (req, res) => res.sendFile(require('path').join(__dirname, '..', 'public', 'admin.html')));
 
 app.get('/health', (req, res) => res.json({ ok: true, messages: store.allMessages().length }));
 

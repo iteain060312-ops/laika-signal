@@ -31,6 +31,7 @@ const eul = (w) => {
 };
 const tags = (kw) => kw.map((k) => '#' + k).join(' ');
 const overlap = (a, b) => a.filter((x) => b.includes(x)).length;
+const NEXT = () => [B.daily, B.demoBooking]; // 한 바퀴 뒤 관객이 고르는 다음 행동
 
 // 받은 신호 카드. kind: stranger | echo | similar
 function signalCard(base, kind, m) {
@@ -88,11 +89,11 @@ function takeDue(user, limit = 2) {
 const hasDue = (user) => user.outbox.some((i) => !i.done && i.dueAt <= Date.now());
 
 // 도착한 것들을 카톡 말풍선으로
-function arrivalReply(user, base, arrived) {
+function arrivalReply(user, base, arrived, prefix = '') {
   const likes = arrived.filter((a) => a.kind === 'like');
   if (likes.length === arrived.length) {
     const m = likes[0].msg;
-    return reply([text(fill(T.gotLike, { movie: m.movie, likes: m.likes || 1 }))], qr([B.start]));
+    return reply([text(prefix + fill(T.gotLike, { movie: m.movie, likes: m.likes || 1 }))], qr(NEXT()));
   }
   arrived = arrived.filter((a) => a.kind !== 'like');
   const notes = arrived.filter((a) => a.notify);
@@ -101,10 +102,11 @@ function arrivalReply(user, base, arrived) {
     const m = notes[0].msg;
     head = fill(notes[0].notify === 'similar' ? T.notifySimilar : T.notifyDifferent, { movie: m.movie, eul: eul(m.movie) });
   } else head = fill(T.arrived, { count: arrived.length });
+  head = prefix + head;
   user.lastShown = arrived.map((a) => a.msg.id);
   const quick = [];
   if (notes.length) { user.lastNotifyMovie = notes[0].msg.movie; quick.push(B.mute); }
-  quick.push(B.start);
+  quick.unshift(...NEXT());
   store.save();
   return reply([text(head), ...arrived.map((a) => signalCard(base, a.kind, a.msg))], qr(quick));
 }
@@ -134,20 +136,23 @@ async function handle(body, base) {
   const userId = body?.userRequest?.user?.id || 'anonymous';
   const callbackUrl = body?.userRequest?.callbackUrl;
   const user = store.getUser(userId);
+  user.lastSeenAt = Date.now();
+  user.channel = userId.startsWith('sim-') ? 'simulator' : 'kakao';
 
   if (utter === B.like) return like(user, userId, body?.action?.clientExtra?.like);
   if (utter === B.mute) {
     const movie = user.lastNotifyMovie;
     if (movie && !user.muted.includes(movie)) user.muted.push(movie);
     store.save();
-    return reply([text(fill(T.muted, { movie: movie || '' }))], qr([B.unmute, B.start]));
+    return reply([text(fill(T.muted, { movie: movie || '' }))], qr([B.unmute, ...NEXT()]));
   }
-  if (utter === B.unmute) { user.muted = []; store.save(); return reply([text(T.unmuted)], qr([B.start])); }
+  if (utter === B.unmute) { user.muted = []; store.save(); return reply([text(T.unmuted)], qr(NEXT())); }
   if (utter === B.start) return schedule();
+  if (utter === B.daily) return daily(user, userId, base);
   if (utter === B.demoBooking || utter === B.home) return newBooking(user, callbackUrl);
   if (utter === B.inbox) {
     const arrived = takeDue(user);
-    return arrived.length ? arrivalReply(user, base, arrived) : reply([text(T.nothingYet)], qr([B.start]));
+    return arrived.length ? arrivalReply(user, base, arrived) : reply([text(T.nothingYet)], qr(NEXT()));
   }
 
   if (user.state === 'booked') {
@@ -171,7 +176,7 @@ async function handle(body, base) {
     if (arrived.length) return arrivalReply(user, base, arrived);
   }
   if (!user.watched.length && !user.movie) return newBooking(user, callbackUrl); // 처음 온 관객
-  return reply([text(T.welcome)], qr([B.start]));
+  return reply([text(T.welcome)], qr(NEXT()));
 }
 
 // ---------- 시간표 · 예매 ----------
@@ -251,9 +256,9 @@ async function receiveReview(user, utter, base) {
 function like(user, userId, msgId) {
   const id = msgId || (user.lastShown || [])[0];
   const m = id && store.getMessage(id);
-  if (!m) return reply([text(T.liked)], qr([B.start]));
+  if (!m) return reply([text(T.liked)], qr(NEXT()));
   m.likedBy ||= [];
-  if (m.likedBy.includes(userId)) return reply([text(T.likedAlready)], qr([B.start]));
+  if (m.likedBy.includes(userId)) return reply([text(T.likedAlready)], qr(NEXT()));
   m.likedBy.push(userId);
   m.likes = m.likedBy.length;
   // 보낸 사람에게 마음이 도착했다고 알려주기 (예시 감상은 제외)
@@ -262,7 +267,7 @@ function like(user, userId, msgId) {
     author.outbox.push({ kind: 'like', msgId: m.id, dueAt: Date.now() });
   }
   store.save();
-  return reply([text(T.liked)], qr([B.start]));
+  return reply([text(T.liked)], qr(NEXT()));
 }
 
 // ---------- 우주로 보내기 ----------
@@ -289,21 +294,21 @@ function send(user, userId, base, callbackUrl) {
   if (maxDelay === 0) {
     const arrived = takeDue(user);
     const head = T.sent + (arrived.length ? '\n' + fill(T.sentArrived, { count: arrived.length }) : '\n' + T.sentWaiting);
-    return reply([text(head), ...arrived.map((a) => signalCard(base, a.kind, a.msg))], qr([B.start]));
+    return reply([text(head), ...arrived.map((a) => signalCard(base, a.kind, a.msg))], qr(NEXT()));
   }
 
   // 시간차 도착: 카카오 콜백으로 나중에 보내기
   if (callbackUrl && maxDelay <= CALLBACK_LIMIT_MS) {
     setTimeout(async () => {
       const arrived = takeDue(user);
-      const out = arrived.length ? arrivalReply(user, base, arrived) : reply([text(T.nothingYet)], qr([B.start]));
+      const out = arrived.length ? arrivalReply(user, base, arrived) : reply([text(T.nothingYet)], qr(NEXT()));
       try { await postCallback(callbackUrl, out); } catch (e) { console.error('[callback] 실패', e.message); }
     }, maxDelay);
     return { version: '2.0', useCallback: true, data: { text: T.sent + '\n' + T.sentWaiting } };
   }
 
   // 콜백이 없으면: 시뮬레이터는 실시간 수신, 카톡은 다음 대화 때 도착
-  return reply([text(T.sent + '\n' + T.sentWaiting)], qr([B.start]));
+  return reply([text(T.sent + '\n' + T.sentWaiting)], qr(NEXT()));
 }
 
 // 시뮬레이터용: 지금 도착한 신호가 있으면 말풍선으로
@@ -315,4 +320,72 @@ function pushFor(userId, base) {
   return arrived.length ? arrivalReply(user, base, arrived) : null;
 }
 
-module.exports = { handle, pushFor, setCallbackSender };
+// ---------- 일상 속 신호 받기 (관객이 직접 눌러보는 시연용) ----------
+// 누를 때마다 비슷한 신호 → 다른 신호 → 내 신호에 좋아요 순서로 돌아가며 도착
+function daily(user, userId, base) {
+  if (!user.watched.length) return newBooking(user);
+  const order = ['similar', 'different', 'like'];
+  const start = user.dailyCount || 0;
+  for (let k = 0; k < order.length; k++) {
+    const relation = order[(start + k) % order.length];
+    const movies = [...user.watched].reverse().filter((mv) => !user.muted.includes(mv));
+    for (const mv of movies) {
+      const r = adminSend(userId, relation, 0, mv, true);
+      if (!r.ok) continue;
+      user.dailyCount = start + k + 1;
+      const arrived = takeDue(user);
+      if (arrived.length) return arrivalReply(user, base, arrived, T.dailyIntro ? T.dailyIntro + '\n' : '');
+    }
+  }
+  return reply([text(T.dailyEmpty)], qr([B.demoBooking]));
+}
+
+// ---------- 운영자 패널: 일상 속 신호를 직접 보내기 ----------
+// relation: similar(비슷한 신호) | different(다른 신호) | like(내 신호에 좋아요)
+function adminSend(userId, relation, delaySec = 0, forMovie = null, keepMute = false) {
+  const user = store.getUser(userId);
+  const movie = forMovie || user.watched[user.watched.length - 1] || user.movie;
+  if (!movie) return { ok: false, reason: '아직 영화를 본 적이 없는 관객이에요' };
+  const dueAt = Date.now() + Math.max(0, delaySec) * 1000;
+  const mine = store.allMessages().filter((m) => m.userId === userId && m.movie === movie).pop();
+
+  if (relation === 'like') {
+    if (!mine) return { ok: false, reason: '이 관객이 보낸 신호가 아직 없어요' };
+    mine.likes = (mine.likes || 0) + 1;
+    user.outbox.push({ kind: 'like', msgId: mine.id, dueAt });
+    store.save();
+    return { ok: true, movie };
+  }
+  const myKw = mine ? mine.keywords : [];
+  const pool = store.allMessages().filter((m) => m.movie === movie && m.userId !== userId && m.shareable && !user.seen.includes(m.id));
+  const fit = pool.filter((m) => {
+    const ov = overlap(m.keywords, myKw);
+    return relation === 'similar' ? ov >= 2 || !myKw.length : ov <= 1;
+  });
+  const pickFrom = fit.length ? fit : pool;
+  if (!pickFrom.length) return { ok: false, reason: '이 영화에 보낼 수 있는 새 신호가 없어요' };
+  const m = pickFrom[Math.floor(Math.random() * pickFrom.length)];
+  user.outbox.push({ kind: 'notify', relation: relation === 'similar' ? 'similar' : 'different', msgId: m.id, dueAt });
+  if (!keepMute && user.muted.includes(movie)) user.muted = user.muted.filter((x) => x !== movie); // 패널에서 보낼 땐 그만 받기를 풀어줌
+  store.save();
+  return { ok: true, movie, preview: m.text };
+}
+
+function adminUsers() {
+  return store.allUsers()
+    .filter(({ id }) => id !== 'seed')
+    .map(({ id, u }) => ({
+      id,
+      channel: u.channel || (id.startsWith('sim-') ? 'simulator' : 'kakao'),
+      lastSeenAt: u.lastSeenAt || 0,
+      movie: u.watched?.[u.watched.length - 1] || u.movie || null,
+      watched: u.watched || [],
+      muted: u.muted || [],
+      state: u.state,
+      waiting: (u.outbox || []).filter((i) => !i.done).length,
+      sent: store.allMessages().filter((m) => m.userId === id).length,
+    }))
+    .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+}
+
+module.exports = { handle, pushFor, setCallbackSender, adminSend, adminUsers };
