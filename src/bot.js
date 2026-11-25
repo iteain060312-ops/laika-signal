@@ -201,7 +201,13 @@ function newBooking(user, callbackUrl) {
     seat: pick([...BK.seatRows]) + (1 + Math.floor(Math.random() * BK.seatsPerRow)),
     ticket: 'LK' + String(Math.floor(Math.random() * 1e8)).padStart(8, '0'),
   };
-  const delay = (cfg.flow.screeningEndDelaySec ?? 5) * 1000;
+  const delay = (cfg.flow.screeningEndDelaySec ?? 0) * 1000;
+  // 0초면 예매 안내와 상영 종료 안내를 한 번에 (콜백 없이도 바로 도착)
+  if (delay === 0) {
+    Object.assign(user, { state: 'await_review', movie, booking: b, pending: null, screeningEndsAt: null });
+    store.save();
+    return reply([text(fill(T.booking, b)), text(fill(T.screeningEnd, { movie }))], qr([B.home]));
+  }
   Object.assign(user, { state: 'booked', movie, booking: b, pending: null, screeningEndsAt: Date.now() + delay });
   store.save();
   // 상영 종료 안내는 버튼 없이 잠시 뒤 자동으로 (카카오 콜백)

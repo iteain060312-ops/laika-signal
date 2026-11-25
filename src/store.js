@@ -21,15 +21,20 @@ function load() {
     db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
   } catch {
     db = { messages: [], users: {} };
-    const seeds = JSON.parse(fs.readFileSync(SEED_FILE, 'utf8'));
-    for (const s of seeds) {
-      db.messages.push({
-        id: newId(), userId: 'seed', movie: s.movie, keywords: s.keywords,
-        text: s.text, shareable: true, seed: true, createdAt: Date.now(),
-      });
-    }
-    save();
   }
+  // 예시 감상을 고치거나 늘렸으면, 이미 쌓인 데이터는 두고 예시만 새로 맞춤
+  const seeds = JSON.parse(fs.readFileSync(SEED_FILE, 'utf8'));
+  const keep = new Set(seeds.map((x) => x.movie + '|' + x.text));
+  db.messages = db.messages.filter((m) => !m.seed || keep.has(m.movie + '|' + m.text));
+  const have = new Set(db.messages.filter((m) => m.seed).map((m) => m.movie + '|' + m.text));
+  for (const x of seeds) {
+    if (have.has(x.movie + '|' + x.text)) continue;
+    db.messages.push({
+      id: newId(), userId: 'seed', movie: x.movie, keywords: x.keywords,
+      text: x.text, shareable: true, seed: true, createdAt: Date.now(),
+    });
+  }
+  save();
   return db;
 }
 

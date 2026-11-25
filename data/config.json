@@ -272,16 +272,16 @@
     "minReviewLength": 5,
     "keywordsMin": 3,
     "keywordsMax": 4,
-    "screeningEndDelaySec": 5
+    "screeningEndDelaySec": 0
   },
   "signals": {
     "stranger": {
       "enabled": true,
-      "delayMin": 0.5
+      "delayMin": 0
     },
     "echo": {
       "enabled": true,
-      "delayMin": 0.5
+      "delayMin": 0
     }
   },
   "notify": {
@@ -307,7 +307,7 @@
     "home": "처음으로"
   },
   "messages": {
-    "booking": "🎟 [라이카시네마] 예매 완료 안내\n\n《{movie}》\n{date} {time} · {hall}\n좌석 {seat}\n예매번호 {ticket}\n\n상영이 끝나면 이 채널로 안내를 보내드릴게요.\n(프로토타입 시연용 예매예요)",
+    "booking": "🎟 [라이카시네마] 예매 완료 안내\n\n《{movie}》\n{date} {time} · {hall}\n좌석 {seat}\n예매번호 {ticket}\n\n(프로토타입 시연용 예매예요)",
     "bookingRemind": "《{movie}》 상영 중이에요. 상영이 끝나면 바로 알려드릴게요.",
     "screeningEnd": "《{movie}》 상영이 종료되었습니다.\n\n📡 오늘의 감상을 신호로 보내보세요.\n\n신호는 당신의 감상을 담은 작은 픽셀 그림이에요. 1974년 인류가 미지의 존재에게 보낸 '아레시보 메시지'처럼, 감상을 보내면 AI가 그 안의 감정을 읽어 문양으로 바꿔요.\n\n신호를 우주로 보내면 낯선 관객에게 닿고, 두 개의 신호가 당신에게 돌아와요.\n· 같은 영화를 보고 다르게 느낀 사람의 신호\n· 다른 영화를 보고 비슷하게 느낀 사람의 신호\n\n지금 떠오르는 감상을 한두 문장으로 보내주세요.",
     "tooShort": "조금만 더 길게 들려주세요. {minLength}글자 이상이면 신호로 바꿀 수 있어요.",
