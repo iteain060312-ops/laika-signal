@@ -26,9 +26,11 @@
   .img { border-radius:12px; overflow:hidden; background:#fff; }
   .img img, .card img { display:block; width:100%; height:auto; }
   .card { background:#fff; border-radius:12px; overflow:hidden; width:260px; max-width:100%; }
+  .img { width:200px; max-width:100%; }
   .card .body { padding:11px 13px 13px; }
   .card .title { font-weight:700; font-size:14.5px; margin-bottom:4px; }
   .card .desc { font-size:13.5px; color:#333; white-space:pre-wrap; line-height:1.5; word-break:keep-all; overflow-wrap:anywhere; }
+  .cbtn { display:block; width:100%; border:0; font:inherit; cursor:pointer; margin-top:10px; text-align:center; padding:9px; border-radius:8px; background:#f2f2f2; color:#191919; text-decoration:none; font-size:14px; }
   .typing { color:var(--sub); font-size:13px; padding-left:44px; }
   #quick { display:flex; gap:6px; overflow-x:auto; padding:6px 12px 8px; min-height:44px; }
   #quick button { flex:none; border:1px solid rgba(0,0,0,.12); background:#fff; border-radius:16px; padding:7px 13px; font-size:13.5px; cursor:pointer; min-height:32px; }
@@ -94,6 +96,18 @@ function renderOutputs(outputs) {
       const d = document.createElement('div'); d.className = 'img';
       const img = new Image(); img.src = o.simpleImage.imageUrl; img.alt = o.simpleImage.altText || ''; img.onload = scroll;
       d.appendChild(img); s.appendChild(d);
+    } else if (o.textCard) {
+      const c = o.textCard;
+      const d = document.createElement('div'); d.className = 'card';
+      const body = document.createElement('div'); body.className = 'body';
+      const t = document.createElement('div'); t.className = 'title'; t.textContent = c.title || ''; body.appendChild(t);
+      const p = document.createElement('div'); p.className = 'desc'; p.textContent = c.description || ''; body.appendChild(p);
+      (c.buttons || []).forEach((b) => {
+        const a = document.createElement('a'); a.className = 'cbtn'; a.textContent = b.label;
+        if (b.webLinkUrl) { a.href = b.webLinkUrl; a.target = '_blank'; a.rel = 'noopener'; }
+        body.appendChild(a);
+      });
+      d.appendChild(body); s.appendChild(d);
     } else if (o.basicCard) {
       const c = o.basicCard;
       const d = document.createElement('div'); d.className = 'card';
@@ -101,6 +115,11 @@ function renderOutputs(outputs) {
       const body = document.createElement('div'); body.className = 'body';
       if (c.title) { const t = document.createElement('div'); t.className = 'title'; t.textContent = c.title; body.appendChild(t); }
       if (c.description) { const t = document.createElement('div'); t.className = 'desc'; t.textContent = c.description; body.appendChild(t); }
+      (c.buttons || []).forEach((b) => {
+        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'cbtn'; btn.textContent = b.label;
+        btn.onclick = () => { send(b.messageText || b.label, false, b.extra); btn.textContent = '♥ 마음을 전했어요'; btn.disabled = true; };
+        body.appendChild(btn);
+      });
       d.appendChild(body); s.appendChild(d);
     }
   }
@@ -116,7 +135,7 @@ function renderQuick(list) {
   });
 }
 
-async function send(text, silent) {
+async function send(text, silent, extra) {
   text = text.trim(); if (!text) return;
   if (!silent) addMe(text);
   renderQuick([]);
@@ -126,17 +145,26 @@ async function send(text, silent) {
   try {
     const res = await fetch('/skill', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userRequest: { utterance: text, user: { id: userId } }, action: { clientExtra: {} } }),
+      body: JSON.stringify({ userRequest: { utterance: text, user: { id: userId } }, action: { clientExtra: extra || {} } }),
     });
     const data = await res.json();
     typing.remove();
-    renderOutputs(data.template.outputs || []);
-    renderQuick(data.template.quickReplies);
+    if (data.useCallback) { renderOutputs([{ simpleText: { text: (data.data && data.data.text) || '잠시만요…' } }]); renderQuick([]); }
+    else { renderOutputs(data.template.outputs || []); renderQuick(data.template.quickReplies); }
   } catch (e) {
     typing.remove();
     renderOutputs([{ simpleText: { text: '서버에 연결하지 못했어요.' } }]);
   } finally { sendBtn.disabled = false; }
 }
+
+// 도착한 신호 실시간 수신 (카톡에서는 콜백이나 다음 대화 때 도착)
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/push/' + encodeURIComponent(userId));
+    const d = await r.json();
+    if (d.template) { renderOutputs(d.template.outputs || []); renderQuick(d.template.quickReplies); }
+  } catch (e) {}
+}, 3000);
 
 document.getElementById('f').addEventListener('submit', (e) => { e.preventDefault(); const v = input.value; input.value = ''; send(v); });
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); document.getElementById('f').requestSubmit(); } });

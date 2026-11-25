@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { handle } = require('./bot');
+const { handle, pushFor, setCallbackSender } = require('./bot');
 const { render } = require('./glyph');
 const store = require('./store');
 
@@ -24,7 +24,7 @@ app.post('/skill', async (req, res) => {
     console.error('[skill] 오류', err);
     res.json({
       version: '2.0',
-      template: { outputs: [{ simpleText: { text: '신호가 잠시 끊겼어요. 다시 한 번 보내주세요.' } }] },
+      template: { outputs: [{ simpleText: { text: require('./config').cfg.messages.error } }] },
     });
   } finally {
     const ms = Date.now() - started;
@@ -32,13 +32,27 @@ app.post('/skill', async (req, res) => {
   }
 });
 
-// 도트 신호 이미지: /glyph/0-5-8.png
-app.get('/glyph/:code.png', (req, res) => {
+// 신호 이미지: /glyph/v/0-5-8.png (세로) · /glyph/h/0-5-8.png (가로, 카드용)
+function sendGlyph(req, res, orient) {
   const ids = req.params.code.split('-').map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < 64).slice(0, 4);
   if (!ids.length) return res.status(400).end();
   res.set('Content-Type', 'image/png');
-  res.set('Cache-Control', 'public, max-age=31536000, immutable');
-  res.send(render(ids));
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.send(render(ids, orient));
+}
+app.get('/glyph/v/:code.png', (req, res) => sendGlyph(req, res, 'v'));
+app.get('/glyph/h/:code.png', (req, res) => sendGlyph(req, res, 'h'));
+app.get('/glyph/:code.png', (req, res) => sendGlyph(req, res, 'v'));
+
+// 카카오 콜백: 나중에 도착하는 신호를 callbackUrl로 보냄
+setCallbackSender(async (url, body) => {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  console.log('[callback]', res.status, await res.text());
+});
+
+// 시뮬레이터가 몇 초마다 물어보는 주소: 도착한 신호가 있으면 돌려줌
+app.get('/api/push/:userId', (req, res) => {
+  res.json(pushFor(String(req.params.userId).slice(0, 80), baseUrl(req)) || {});
 });
 
 app.get('/health', (req, res) => res.json({ ok: true, messages: store.allMessages().length }));

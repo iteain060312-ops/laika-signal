@@ -46,8 +46,14 @@ function save() {
 
 function getUser(userId) {
   const d = load();
-  if (!d.users[userId]) d.users[userId] = { state: 'idle', inbox: [] };
-  return d.users[userId];
+  if (!d.users[userId]) d.users[userId] = { state: 'idle' };
+  const u = d.users[userId];
+  u.outbox ||= []; u.watched ||= []; u.muted ||= []; u.seen ||= [];
+  return u;
+}
+
+function allUsers() {
+  return Object.entries(load().users).map(([id, u]) => ({ id, u }));
 }
 
 function addMessage(msg) {
@@ -66,4 +72,4 @@ function allMessages() {
   return load().messages;
 }
 
-module.exports = { load, save, getUser, addMessage, getMessage, allMessages };
+module.exports = { load, save, getUser, allUsers, addMessage, getMessage, allMessages };

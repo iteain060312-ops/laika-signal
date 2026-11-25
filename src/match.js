@@ -2,6 +2,8 @@
 // ② 낯선 신호: 같은 영화 + 다른 키워드 구성 (겹치는 게 1개쯤 있으면 우선)
 // ③ 먼 신호:   다른 영화 + 비슷한 키워드 구성
 const store = require('./store');
+const { cfg } = require('./config');
+const M = cfg.matching;
 
 function jaccard(a, b) {
   const A = new Set(a), B = new Set(b);
@@ -28,12 +30,14 @@ function candidates(mine, exclude) {
 function findStranger(mine, exclude = new Set()) {
   const pool = candidates(mine, exclude).filter((m) => m.movie === mine.movie);
   if (pool.length === 0) return null;
-  // 1순위: 1개만 겹치고 나머지는 다름 → 낯설지만 납득되는 해석
-  const partial = pool.filter((m) => overlap(mine.keywords, m.keywords) === 1 && jaccard(mine.keywords, m.keywords) <= 0.34);
-  if (partial.length) return pickRandom(partial);
-  // 2순위: 가장 덜 비슷한 것
+  // partial: 1개만 겹치고 나머지는 다른 감상 우선 → 낯설지만 납득되는 해석
+  if (M.strangerMode === 'partial') {
+    const partial = pool.filter((m) => overlap(mine.keywords, m.keywords) === 1 && jaccard(mine.keywords, m.keywords) <= 0.34);
+    if (partial.length) return pickRandom(partial);
+  }
+  // opposite(또는 partial이 없을 때): 가장 덜 비슷한 것
   const min = Math.min(...pool.map((m) => jaccard(mine.keywords, m.keywords)));
-  if (min >= 0.5) return null; // 다 비슷하면 '낯선 신호'라고 부르기 어려움
+  if (min >= M.strangerMaxSimilarity) return null; // 다 비슷하면 '낯선 신호'라고 부르기 어려움
   return pickRandom(pool.filter((m) => jaccard(mine.keywords, m.keywords) === min));
 }
 
@@ -41,9 +45,11 @@ function findStranger(mine, exclude = new Set()) {
 function findEcho(mine, exclude = new Set()) {
   const pool = candidates(mine, exclude).filter((m) => m.movie !== mine.movie);
   if (pool.length === 0) return null;
-  const max = Math.max(...pool.map((m) => jaccard(mine.keywords, m.keywords)));
-  if (max === 0) return null;
-  return pickRandom(pool.filter((m) => jaccard(mine.keywords, m.keywords) === max));
+  const best = Math.max(...pool.map((m) => overlap(mine.keywords, m.keywords)));
+  if (best < Math.max(1, M.echoMinOverlap)) return null;
+  const top = pool.filter((m) => overlap(mine.keywords, m.keywords) === best);
+  const max = Math.max(...top.map((m) => jaccard(mine.keywords, m.keywords)));
+  return pickRandom(top.filter((m) => jaccard(mine.keywords, m.keywords) === max));
 }
 
 module.exports = { findStranger, findEcho, jaccard };
